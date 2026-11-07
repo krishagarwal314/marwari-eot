@@ -1,0 +1,14 @@
+# Installed on top of Colab's preinstalled torch / numpy / scipy / pandas / librosa / soundfile / scikit-learn.
+# transformers is pinned to the version Smart Turn trains with (pipecat-ai/smart-turn requirements.txt);
+# the model code was verified locally with it. The rest are pinned after the first full Colab run:
+# 00_setup_check saves `pip freeze` to Drive/marwari-eot/logs/.
+transformers==4.48.2
+datasets==4.4.1
+huggingface_hub
+onnx
+onnxruntime
+pyyaml
+silero-vad
+wandb
+google-genai
+ipywidgets

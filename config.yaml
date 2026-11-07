@@ -1,0 +1,83 @@
+# Single source of truth for paths, revisions, seeds and hyper-parameters.
+# Notebooks read this file through common.colab_setup.setup(); nothing is hard-coded in them.
+
+project:
+  name: marwari-eot
+  drive_root: /content/drive/MyDrive/marwari-eot   # every artifact that matters lives here
+  local_cache: /content/cache                      # fast local copy of feature shards
+  repo_dir: /content/marwari-eot                   # where the notebooks clone this repo
+  repo_url: https://github.com/krishagarwal314/marwari-eot.git
+  smart_turn_repo_url: https://github.com/pipecat-ai/smart-turn.git
+  smart_turn_commit: 4786657e242dfe77dd138699ac564ee074a2a543   # code our model/feature logic is copied from
+  smart_turn_dir: /content/smart-turn
+
+# Sub-directories of drive_root (created by setup()).
+dirs:
+  raw: data/raw
+  clips: data/clips
+  labels: data/labels
+  splits: data/splits
+  test_sets: data/test_sets
+  features: features
+  checkpoints: checkpoints
+  models: models
+  logs: logs
+  reports: reports
+  cache: cache
+
+hf:
+  smart_turn_model_repo: pipecat-ai/smart-turn-v3
+  smart_turn_model_revision: f766f81d3cfdf7737ac64aad813d91bbfd56bf93
+  smart_turn_onnx:                   # file names inside smart_turn_model_repo
+    v3.0: smart-turn-v3.0.onnx
+    v3.1_cpu: smart-turn-v3.1-cpu.onnx
+    v3.1_gpu: smart-turn-v3.1-gpu.onnx
+    v3.2_cpu: smart-turn-v3.2-cpu.onnx   # static int8 (QDQ)
+    v3.2_gpu: smart-turn-v3.2-gpu.onnx   # fp32 - source of fine-tuning weights
+  data_train: pipecat-ai/smart-turn-data-v3.2-train
+  data_train_revision: f8c95d284595defb6b88a715c356cbc5c31b7ad1
+  data_test: pipecat-ai/smart-turn-data-v3.2-test
+  data_test_revision: dfc179241fee65b0efe81ca37786f41ce26f38ec
+  vaani: ARTPARK-IISc/Vaani
+  whisper:
+    tiny: openai/whisper-tiny
+    base: openai/whisper-base
+
+# Names of Colab Secrets (values are never stored in code).
+secrets:
+  required: [HF_TOKEN, GEMINI_API_KEY]
+  optional: [WANDB_API_KEY]
+
+seed: 1234          # for data processing / sampling
+seeds: [0, 1, 2]    # training seeds; every config runs all three
+
+audio:
+  sample_rate: 16000
+  window_s: 8              # Smart Turn input window; audio is left-padded / truncated to the last 8 s
+  n_mels: 80
+  n_frames: 800
+  trailing_silence_ms: 200
+
+features:
+  dtype: float16           # 80x800 per clip: fp16 = 128 KB, fp32 = 256 KB. 06 checks fp16 vs fp32 parity.
+  shard_size: 2048         # clips per shard
+
+runtime:
+  batch_probe_start: 512   # find largest batch: start here, halve on OOM
+  batch_headroom: 0.9      # then use 90% of the max that fit
+  effective_batch: 384     # kept fixed across GPUs via gradient accumulation (Smart Turn used 384)
+  eval_batch: 256
+  log_gpu_every: 100
+  min_gpu_util: 80
+  compile_probe_steps: 200
+  num_workers: null        # null -> os.cpu_count()
+  prefetch_factor: 4
+
+checkpoint:
+  every_steps: 500
+  keep_last: 3
+  best_metric: dev_balanced_accuracy
+
+logging:
+  wandb_project: marwari-eot
+  wandb_entity: null
