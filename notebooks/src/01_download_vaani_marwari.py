@@ -82,8 +82,10 @@ for folder, files in plan.items():
 # %%
 idx = V.build_index(SHARDS)
 rank = {f: i for i, f in enumerate(cfg["vaani"]["folders"])}
-idx["folder"] = idx["source_file"].map(lambda p: next(f for f in cfg["vaani"]["folders"] if p.startswith(f + "/")))
-idx["folder_rank"] = idx["folder"].map(rank)
+# folder = first two path parts ("audio/Marwari", "audio/Rajasthan"). Folders no longer in the
+# config (e.g. district folders processed by an earlier run) rank after all configured ones.
+idx["folder"] = idx["source_file"].map(lambda p: "/".join(p.split("/")[:2]))
+idx["folder_rank"] = idx["folder"].map(lambda f: rank.get(f, len(rank)))
 n_before = len(idx)
 idx = idx.sort_values(["folder_rank", "shard_file", "row_in_shard"]).drop_duplicates("rec_id", keep="first")
 print(f"{n_before} rows -> {len(idx)} unique recordings ({n_before - len(idx)} duplicates dropped)")
