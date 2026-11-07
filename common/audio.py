@@ -43,8 +43,25 @@ def decode_bytes(data: bytes, target_sr: int = SR) -> np.ndarray:
     """Decode any soundfile-readable bytes (wav/flac/ogg/mp3) to mono float32 at target_sr."""
     import soundfile as sf
 
-    audio, sr = sf.read(io.BytesIO(data), dtype="float32", always_2d=False)
+    try:
+        audio, sr = sf.read(io.BytesIO(data), dtype="float32", always_2d=False)
+    except Exception:  # formats libsndfile can't read (e.g. some mp3/m4a): fall back to ffmpeg via librosa
+        import librosa
+
+        with tempfile.NamedTemporaryFile(suffix=".bin") as f:
+            f.write(data)
+            f.flush()
+            audio, sr = librosa.load(f.name, sr=None, mono=True)
     return to_mono_16k(audio, sr, target_sr)
+
+
+def encode(audio: np.ndarray, fmt: str = "FLAC", sr: int = SR) -> bytes:
+    """float32 mono -> 16-bit FLAC (storage) or WAV (for APIs) bytes."""
+    import soundfile as sf
+
+    buf = io.BytesIO()
+    sf.write(buf, np.clip(audio, -1.0, 1.0), sr, format=fmt, subtype="PCM_16")
+    return buf.getvalue()
 
 
 def decode_hf_audio(value: dict, target_sr: int = SR) -> np.ndarray:

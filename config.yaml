@@ -39,6 +39,7 @@ hf:
   data_test: pipecat-ai/smart-turn-data-v3.2-test
   data_test_revision: dfc179241fee65b0efe81ca37786f41ce26f38ec
   vaani: ARTPARK-IISc/Vaani
+  vaani_revision: 9e6ed4f94f7060e633cbc500480623ae7521522c
   whisper:
     tiny: openai/whisper-tiny
     base: openai/whisper-base
@@ -77,6 +78,60 @@ checkpoint:
   every_steps: 500
   keep_last: 3
   best_metric: dev_balanced_accuracy
+
+# ---- Phase 1 -------------------------------------------------------------------------------
+vaani:
+  # Folders are processed in this order; each source parquet shard gets a done marker, so you can
+  # stop after any folder. Raw shards are downloaded to local disk and deleted after processing.
+  folders:
+    - audio/Marwari                 # ~18 GB, main source
+    - audio/Mewari
+    - audio/Jaipuri
+    - audio/Shekhawati
+    - audio/Harauti
+    - audio/Bagri
+    - audio/Wagdi
+    - audio/Rajasthan               # district folders (Barmer, Bikaner, Churu, Jaipur, Jaisalmer, Nagaur), ~40 GB, mixed languages
+    - audio/Rajasthani              # ~21 GB, related dialect only
+  skip_folders: []                  # e.g. [audio/Rajasthani] to save time
+  # Row-level grouping by the `language` column (lower-cased, stripped). Rows in no group are dropped.
+  marwari_languages: [marwari, marwadi]
+  related_languages: [rajasthani, mewari, dhundhari, jaipuri, shekhawati, harauti, hadoti, bagri, wagdi, mewati, malvi]
+
+clips:
+  version: v1
+  vad_threshold: 0.5
+  min_silence_ms: 100               # silero: shortest gap that splits two speech segments
+  speech_pad_ms: 30                 # silero pads segments, so measured gaps are ~60 ms shorter than true gaps
+  pause_min_ms: 200                 # incomplete cut points: internal pauses of 200-800 ms
+  pause_max_ms: 800
+  min_context_s: 1.0                # need at least this much audio before an incomplete cut
+  max_incomplete_per_rec: 2
+  target_complete_frac: 0.6         # applied after labelling (03), per split
+  telephony_frac_train: 0.5         # flag set here, augmentation applied at feature extraction (06)
+
+splits:
+  version: v1                       # frozen once written; never reassigned
+  dev_frac: 0.1
+  test_frac: 0.1                    # test speakers are held back for Phase 2
+  stratify_by: [district, gender]
+
+labelling:
+  version: v1
+  model: gemini-2.5-flash           # 03 lists available models and stops if this one is missing
+  prompt: >-
+    You will hear a short clip of a person speaking Marwari (a Rajasthani language). The clip ends
+    at a pause. Has the speaker finished their thought, or will they continue?
+    Answer COMPLETE, INCOMPLETE or UNSURE, and give your confidence from 0 to 1.
+  confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
+  thinking_budget: 0                # no hidden reasoning tokens (cheaper); set null for models without this option
+  workers: 4
+  requests_per_minute: 60           # lower this on the free tier
+  max_retries: 6
+  label_splits: [train, dev, test]  # test is labelled only to help draw the Phase 2 set; never trained on
+  max_clips: null                   # cap for a trial run, e.g. 500
+  check_sample_size: 200
+  agreement_required: 0.90
 
 logging:
   wandb_project: marwari-eot

@@ -10,11 +10,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC, OUT = ROOT / "notebooks" / "src", ROOT / "notebooks"
 
 
+BOOTSTRAP = SRC / "_bootstrap.py"
+
+
 def cells_from(text: str) -> list[dict]:
+    """'# %% [bootstrap]' cells are replaced by notebooks/src/_bootstrap.py (shared first cell)."""
     cells = []
     for chunk in re.split(r"^# %%", text, flags=re.M)[1:]:
         header, _, body = chunk.partition("\n")
         body = body.strip("\n")
+        if "[bootstrap]" in header:
+            body = BOOTSTRAP.read_text().strip("\n")
         if "[markdown]" in header:
             src = "\n".join(re.sub(r"^# ?", "", line) for line in body.splitlines())
             cells.append({"cell_type": "markdown", "metadata": {}, "source": src.splitlines(True)})

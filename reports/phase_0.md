@@ -95,3 +95,12 @@ Barmer, Bikaner, Churu, Jaipur, Jaisalmer, Nagaur. The notebook-00 filter only m
 3. Run `notebooks/00_setup_check.ipynb` on an A100 or L4 runtime and send me the JSON it prints.
 
 **Waiting for: the DECISION 1 choice, the storage choice, and a GEMINI_API_KEY in Colab Secrets.**
+
+## Decisions taken (7 Nov 2026)
+
+* **DECISION 1:** fine-tune the converted v3.2 weights (option a′) for E0–E4 and E6. E5
+  (Whisper-base) is trained from Whisper-base with the same recipe.
+* **Storage:** Colab's local disk (~112 GB, wiped when the session ends) is used only as scratch
+  space for downloads. Drive keeps the compact outputs: 16 kHz FLAC recordings and 8 s clips in
+  one parquet per shard. Replay features use a fixed language-stratified subset (about 60k clips,
+  fp16, about 8 GB).
