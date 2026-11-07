@@ -1,7 +1,7 @@
 # Phase 0: repo layout, environment, weights check
 
-Status: code written; **notebook 00 has not yet been run on Colab.** It produces
-`reports/phase0_env_check.json` on Drive. Paste its output here once it has run.
+Status: **complete.** Notebook 00 ran on Colab (Tesla T4) on 7 Nov 2026; output is at
+`Drive/marwari-eot/reports/phase0_env_check.json`.
 
 ## What exists
 
@@ -46,7 +46,12 @@ exported unnamed and transposed. Each one is named by following its MatMul to th
 |---|---|
 | 4 random tensors | 6e-8 |
 | 8 synthetic clips through the real feature extractor | 2.7e-6 |
-| 2,000 real test clips, accuracy vs published | **pending: runs in notebook 00 on Colab** |
+| 2,000 real test clips (random subset, Colab T4) | 6.4e-6, 0 prediction flips |
+
+On those 2,000 clips the ONNX model, the converted PyTorch model, and PyTorch fed fp16-stored
+features all score **94.6%** accuracy (balanced 94.6%). The published figure on the full
+31,527 clips is 93.71%, which is consistent for a 2,000-clip sample. Storing features as fp16
+changed probabilities by at most 0.0025 and flipped no predictions, so fp16 storage is safe.
 
 ## DECISION 1: which weights to start Phase 4 from
 
@@ -61,6 +66,24 @@ checks that the training loop does no harm. Use (b) only for E5 (Whisper-base), 
 checkpoint exists. In that case E5 has to be compared against a tiny model trained the same way
 from scratch, not against fine-tuned v3.2.
 
+## Colab run results (notebook 00)
+
+| Check | Result |
+|---|---|
+| GPU | Tesla T4 -> fp16 autocast + GradScaler; 2 CPU workers |
+| Largest Whisper-tiny batch | 512 fits -> micro-batch 384 x accum 1 |
+| HF token | OK (user `krishasdf`) |
+| Gemini key | **missing** (needed in Phase 1, step 03) |
+| W&B | not set (CSV logging on Drive is used) |
+| Smart Turn data columns | as listed above, confirmed |
+| Vaani access | OK. 106 configs. Columns: `audio, language, duration, speakerID, languagesKnown, gender, state, district, pincode, stay(years), isTranscriptionAvailable, transcript, referenceImage, speakerImageHash, UtteranceSequenceID` |
+
+Vaani has a dedicated `audio/Marwari` folder (38 parquet files, about 18 GB) and `audio/Rajasthani`
+(about 21 GB). Small related-dialect folders: Mewari, Shekhawati, Jaipuri (Dhundhari), Harauti,
+Bagri, Wagdi (each 0.03–0.16 GB). There are also district folders under `audio/Rajasthan/`:
+Barmer, Bikaner, Churu, Jaipur, Jaisalmer, Nagaur. The notebook-00 filter only matched
+"Rajasthani"; it has been widened. `speakerID` exists, so splitting by speaker is possible.
+
 ## Things Mehar needs to know now
 
 1. **Drive storage.** Precomputed fp16 features take 128 KB per clip. The full replay train set is
@@ -71,4 +94,4 @@ from scratch, not against fine-tuned v3.2.
    add a GitHub token with read access to this repo as the Colab Secret `GH_TOKEN`.
 3. Run `notebooks/00_setup_check.ipynb` on an A100 or L4 runtime and send me the JSON it prints.
 
-**Waiting for: the DECISION 1 choice, the storage choice, and the output of notebook 00.**
+**Waiting for: the DECISION 1 choice, the storage choice, and a GEMINI_API_KEY in Colab Secrets.**

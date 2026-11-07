@@ -125,7 +125,8 @@ from datasets import get_dataset_config_names
 
 try:
     vaani_cfgs = get_dataset_config_names(cfg["hf"]["vaani"])
-    raj = [c for c in vaani_cfgs if "rajasthan" in c.lower()]
+    RAJ_NAMES = ("marwari", "marwadi", "rajasthan", "mewari", "dhundhari", "jaipuri", "shekhawati", "harauti", "bagri", "wagdi")
+    raj = [c for c in vaani_cfgs if any(n in c.lower() for n in RAJ_NAMES)]
     checks["vaani_n_configs"], checks["vaani_rajasthan_configs"] = len(vaani_cfgs), raj
     print(len(vaani_cfgs), "configs. Rajasthan:", raj or "(none matched; first 50 below)")
     if not raj:
