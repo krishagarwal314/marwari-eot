@@ -152,7 +152,16 @@ def build_index(shard_dir: str) -> "pd.DataFrame":
         frames.append(df)
     if not frames:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+    return unify_object_columns(pd.concat(frames, ignore_index=True))
+
+
+def unify_object_columns(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Vaani shards disagree on some column types (e.g. pincode is int in some, str in others).
+    Store any text/mixed column as str so the index can be written to parquet; missing stays None."""
+    for c in df.columns:
+        if df[c].dtype == object:
+            df[c] = df[c].map(lambda v: None if v is None or (isinstance(v, float) and v != v) else str(v))
+    return df
 
 
 def summarize(index: "pd.DataFrame") -> dict:
