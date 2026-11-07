@@ -84,15 +84,17 @@ vaani:
   # Folders are processed in this order; each source parquet shard gets a done marker, so you can
   # stop after any folder. Raw shards are downloaded to local disk and deleted after processing.
   folders:
-    - audio/Marwari                 # ~18 GB, main source
+    - audio/Marwari                 # ~18 GB, 158 h (9.0 h transcribed: Nagaur 5.9 h, Churu 3.1 h). Main source.
     - audio/Mewari
     - audio/Jaipuri
     - audio/Shekhawati
     - audio/Harauti
     - audio/Bagri
     - audio/Wagdi
-    - audio/Rajasthan               # district folders (Barmer, Bikaner, Churu, Jaipur, Jaisalmer, Nagaur), ~40 GB, mixed languages
-    - audio/Rajasthani              # ~21 GB, related dialect only
+    - audio/Rajasthani              # ~21 GB, 188 h, related dialect only
+  # audio/Rajasthan/<district> folders are not listed: per the Vaani README their Marwari hours
+  # (Barmer 0.1, Bikaner 10.1, Churu 41.2, Jaipur 11.6, Jaisalmer 26.4, Nagaur 68.8 = 158.3 h)
+  # equal the Marwari folder total, so they would only add duplicates and Hindi.
   skip_folders: []                  # e.g. [audio/Rajasthani] to save time
   # Row-level grouping by the `language` column (lower-cased, stripped). Rows in no group are dropped.
   marwari_languages: [marwari, marwadi]
