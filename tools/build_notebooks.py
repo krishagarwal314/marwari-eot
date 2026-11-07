@@ -31,7 +31,7 @@ def cells_from(text: str) -> list[dict]:
 
 
 def main():
-    for src in sorted(SRC.glob("[0-9][0-9]_*.py")):
+    for src in sorted(SRC.glob("[0-9][0-9]*_*.py")):
         nb = {"nbformat": 4, "nbformat_minor": 5,
               "metadata": {"accelerator": "GPU", "colab": {"provenance": []},
                            "kernelspec": {"name": "python3", "display_name": "Python 3"}},

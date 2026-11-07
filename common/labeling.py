@@ -14,13 +14,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 LABELS = ("COMPLETE", "INCOMPLETE", "UNSURE")
+LANGS = ("MARWARI", "HINDI", "MIXED", "OTHER")
 _SCHEMA = {
     "type": "OBJECT",
     "properties": {
         "label": {"type": "STRING", "enum": list(LABELS)},
         "confidence": {"type": "NUMBER"},
+        "language": {"type": "STRING", "enum": list(LANGS)},
     },
-    "required": ["label", "confidence"],
+    "required": ["label", "confidence", "language"],
 }
 
 
@@ -84,7 +86,9 @@ class GeminiLabeler:
                 lab = str(d["label"]).upper()
                 if lab not in LABELS:
                     raise ValueError(f"bad label {lab}")
-                return {"label": lab, "confidence": float(d["confidence"])}
+                lang = str(d.get("language", "")).upper()
+                return {"label": lab, "confidence": float(d["confidence"]),
+                        "language": lang if lang in LANGS else None}
             except Exception as e:  # rate limits, 5xx, malformed JSON: back off and retry
                 last = e
                 code = getattr(e, "code", None)
@@ -132,3 +136,19 @@ def decide(position_label: int, llm_label: str | None, llm_conf: float | None, t
     if llm_conf is not None and llm_conf >= threshold:
         return llm_bin, "llm_confident_override"
     return None, "disagree_unconfident"
+
+
+def decide_with_text(position_label: int, llm_label: str | None, llm_conf: float | None,
+                     text_label: int | None, threshold: float) -> tuple:
+    """Like ``decide`` but uses the transcript cue (02b) when there is one: then the clip is kept
+    only if Gemini and the text cue agree, whatever the position rule said."""
+    if text_label is None or (isinstance(text_label, float) and text_label != text_label):  # None/NaN
+        return decide(position_label, llm_label, llm_conf, threshold)
+    if llm_label is None:
+        return None, "unlabelled"
+    if llm_label == "UNSURE":
+        return None, "llm_unsure"
+    llm_bin = 1 if llm_label == "COMPLETE" else 0
+    if llm_bin == int(text_label):
+        return llm_bin, "llm_text_agree"
+    return None, "llm_text_disagree"

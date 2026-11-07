@@ -6,6 +6,9 @@
 # * keep with Gemini's label if it disagrees **and** confidence >= `labelling.confident_threshold`;
 # * drop UNSURE and unconfident disagreements.
 #
+# * if the clip has a transcript cue from 02b, keep it only when Gemini **and** the text cue agree;
+# * clips Gemini or the transcript marks as Hindi are left out of the Marwari sets (`drop_hindi`).
+#
 # Every answer is cached on Drive as it arrives (one JSONL per clip shard). Re-running skips
 # clips that already have an answer. Then a 200-clip blind listening check by a native speaker.
 # **DECISION:** continue only if listener agreement >= 90%.
@@ -19,7 +22,7 @@ import os, json
 import numpy as np, pandas as pd, pyarrow.parquet as pq
 from common.colab_setup import setup
 from common import audio as A, clips as C
-from common.labeling import GeminiLabeler, decide
+from common.labeling import GeminiLabeler, decide_with_text
 
 rt = setup()
 cfg = rt.cfg
@@ -93,10 +96,23 @@ for f in os.listdir(CACHE):
 lab = clips.copy()
 lab["llm_label"] = lab.clip_id.map(lambda i: ans.get(i, {}).get("label"))
 lab["llm_conf"] = lab.clip_id.map(lambda i: ans.get(i, {}).get("confidence"))
-dec = [decide(p, l, c, L["confident_threshold"]) for p, l, c in zip(lab.position_label, lab.llm_label, lab.llm_conf)]
+lab["llm_language"] = lab.clip_id.map(lambda i: ans.get(i, {}).get("language"))
+
+TEXT = rt.path("labels", f"text_features_{cfg['clips']['version']}.parquet")
+if os.path.exists(TEXT):
+    tf = pd.read_parquet(TEXT)[["clip_id", "text_label", "text_reason", "text_before_cut", "text_language", "cut_off"]]
+    lab = lab.merge(tf, on="clip_id", how="left")
+else:
+    print("No text features (run 02b to use transcripts); using Gemini + position rule only.")
+    for c in ["text_label", "text_reason", "text_before_cut", "text_language", "cut_off"]:
+        lab[c] = None
+
+dec = [decide_with_text(p, l, c, t, L["confident_threshold"])
+       for p, l, c, t in zip(lab.position_label, lab.llm_label, lab.llm_conf, lab.text_label)]
 lab["final_label"] = [d[0] for d in dec]
 lab["reason"] = [d[1] for d in dec]
-lab["kept"] = lab.final_label.notna()
+lab["is_hindi"] = (lab.llm_language == "HINDI") | (lab.text_language == "hindi")
+lab["kept"] = lab.final_label.notna() & ~(lab.is_hindi & L["drop_hindi"])
 
 # Balance train/dev to target_complete_frac by dropping the surplus class (fixed hash order).
 # Test clips are not balanced here: Phase 2 draws its own 55/45 set from them.
@@ -121,6 +137,9 @@ report = {
     "clips_labelled": int(len(labelled)),
     "llm_vs_position": pd.crosstab(labelled.kind, labelled.llm_label).to_dict(),
     "reasons": labelled.reason.value_counts().to_dict(),
+    "llm_language": labelled.llm_language.value_counts(dropna=False).to_dict(),
+    "dropped_as_hindi": int((labelled.final_label.notna() & labelled.is_hindi).sum()),
+    "text_vs_llm_on_transcribed": pd.crosstab(labelled.text_label.fillna(-1), labelled.llm_label).to_dict(),
     "position_rule_agreement_with_llm_excl_unsure": float(
         (labelled[labelled.llm_label != "UNSURE"].position_label ==
          (labelled[labelled.llm_label != "UNSURE"].llm_label == "COMPLETE").astype(int)).mean()),
@@ -132,8 +151,9 @@ with open(rt.path("reports", "phase1_labels.json"), "w") as f:
 print(json.dumps(report, indent=1, default=str))
 
 # %% [markdown]
-# ## Listening check (native Marwari listener)
-# 200 random clips from the final train+dev set. The listener does not see any label.
+# ## Listening check
+# 200 random clips from the final train+dev set. The listener does not see any label. For clips
+# from transcribed recordings, the transcript **up to the cut** is shown (never the words after it).
 # Type your name in ANNOTATOR, run the cell, and answer each clip. Every click is saved to Drive
 # immediately, so you can stop and continue later by re-running this cell.
 
@@ -153,8 +173,12 @@ for shard, g in check.groupby("clip_shard"):
     for cid, fl in zip(t.clip_id, t.flac):
         if cid in set(g.clip_id):
             audio_cache[cid] = A.decode_bytes(fl)
+before = lab.set_index("clip_id").text_before_cut
+def info(cid):
+    t = before.get(cid)
+    return f"text up to the cut: …{t[-120:]}" if isinstance(t, str) and t else "(no transcript)"
 ui = LabelUI(list(check.clip_id), audio_cache.__getitem__,
-             rt.path("labels", f"listening_check_{L['version']}.csv"), ANNOTATOR)
+             rt.path("labels", f"listening_check_{L['version']}.csv"), ANNOTATOR, info=info)
 
 # %% [markdown]
 # ## Agreement (DECISION: continue only if >= 90%)

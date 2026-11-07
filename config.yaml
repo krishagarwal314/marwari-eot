@@ -125,6 +125,7 @@ labelling:
     You will hear a short clip of a person speaking Marwari (a Rajasthani language). The clip ends
     at a pause. Has the speaker finished their thought, or will they continue?
     Answer COMPLETE, INCOMPLETE or UNSURE, and give your confidence from 0 to 1.
+    Also say which language is mainly spoken: MARWARI, HINDI, MIXED or OTHER.
   confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
   thinking_budget: 0                # no hidden reasoning tokens (cheaper); set null for models without this option
   workers: 4
@@ -134,6 +135,12 @@ labelling:
   max_clips: null                   # cap for a trial run, e.g. 500
   check_sample_size: 200
   agreement_required: 0.90
+  drop_hindi: true                  # clips Gemini or the transcript marks as Hindi are kept out of the Marwari sets
+
+text:                               # 02b: transcript cues
+  align_model: facebook/mms-1b-all
+  align_lang: hin                   # Devanagari CTC adapter; covers Marwari transcripts (ळ -> ल)
+  align_tolerance_ms: 60
 
 logging:
   wandb_project: marwari-eot
