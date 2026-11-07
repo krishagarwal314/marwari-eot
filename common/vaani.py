@@ -106,12 +106,32 @@ def process_shard(local_parquet: str, repo_path: str, cfg: dict, sr: int = A.SR,
     return rows, stats
 
 
-def write_rows(rows: list[dict], out_path: str) -> None:
+def write_rows(rows: list[dict], out_path: str, local_tmp_dir: str | None = None) -> None:
+    """Write to local disk first, then copy to Drive (retrying: Drive FUSE has transient errors)."""
     import pandas as pd
+    import shutil
+    import tempfile
+    import time
 
-    tmp = out_path + ".tmp"
-    pd.DataFrame(rows).to_parquet(tmp, index=False)
-    os.replace(tmp, out_path)
+    with tempfile.TemporaryDirectory(dir=local_tmp_dir) as d:
+        local = os.path.join(d, "out.parquet")
+        pd.DataFrame(rows).to_parquet(local, index=False)
+        _copy_with_retry(local, out_path)
+
+
+def _copy_with_retry(src: str, dst: str, tries: int = 5) -> None:
+    import shutil
+    import time
+
+    for i in range(tries):
+        try:
+            shutil.copyfile(src, dst + ".tmp")
+            os.replace(dst + ".tmp", dst)
+            return
+        except OSError:
+            if i == tries - 1:
+                raise
+            time.sleep(2 ** i)
 
 
 def build_index(shard_dir: str) -> "pd.DataFrame":
@@ -161,17 +181,30 @@ def run_shard(cfg: dict, repo_path: str, shard_dir: str, done_dir: str, dl_dir: 
     if os.path.exists(done_path):
         with open(done_path) as f:
             return json.load(f)
+    import shutil
+    import traceback
+
     t0 = time.time()
-    local = download(cfg, repo_path, dl_dir)
+    work = os.path.join(dl_dir, key)  # private folder per shard: parallel downloads never share files
+    os.makedirs(work, exist_ok=True)
+    stage = "download"
     try:
+        local = download(cfg, repo_path, work)
+        stage = "process"
         rows, stats = process_shard(local, repo_path, cfg)
+        stage = "write"
+        if rows:
+            write_rows(rows, os.path.join(shard_dir, key + ".parquet"), work)
+        stats.update(repo_path=repo_path, key=key, seconds=round(time.time() - t0, 1),
+                     hours_kept=round(sum(r["duration_s"] for r in rows) / 3600, 3))
+        stage = "done-marker"
+        tmp_marker = os.path.join(work, "done.json")
+        with open(tmp_marker, "w") as f:
+            json.dump(stats, f)
+        _copy_with_retry(tmp_marker, done_path)
+        return stats
+    except Exception as e:
+        tb = traceback.format_exc().strip().splitlines()
+        raise RuntimeError(f"stage={stage}: {e!r} | {' / '.join(tb[-3:])}") from None
     finally:
-        os.remove(local)
-    if rows:
-        write_rows(rows, os.path.join(shard_dir, key + ".parquet"))
-    stats.update(repo_path=repo_path, key=key, seconds=round(time.time() - t0, 1),
-                 hours_kept=round(sum(r["duration_s"] for r in rows) / 3600, 3))
-    with open(done_path + ".tmp", "w") as f:
-        json.dump(stats, f)
-    os.replace(done_path + ".tmp", done_path)
-    return stats
+        shutil.rmtree(work, ignore_errors=True)
