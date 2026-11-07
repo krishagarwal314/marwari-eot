@@ -105,10 +105,11 @@ def split_for_new_speaker(speaker_id: str, cfg: dict, seed: int) -> str:
 _VAD = None
 
 
-def build_clips_for_shard(cfg: dict, raw_shard_path: str, keep_rec_ids: list[str], split_of: dict,
+def build_clips_for_shard(cfg: dict, raw_shard_path: str, rec_speaker: dict, split_of: dict,
                           out_path: str, done_path: str, seed: int) -> dict:
     """VAD + candidates for every kept recording in one raw Vaani shard; writes one clip parquet.
 
+    rec_speaker: rec_id -> speaker id for the recordings to use from this shard.
     Safe to call in a subprocess (each process loads its own Silero model, single-threaded).
     """
     import json
@@ -133,7 +134,7 @@ def build_clips_for_shard(cfg: dict, raw_shard_path: str, keep_rec_ids: list[str
         _VAD = load_silero_vad()
     window = cfg["audio"]["window_s"]
     tel_frac = cfg["clips"]["telephony_frac_train"]
-    keep = set(keep_rec_ids)
+    keep = set(rec_speaker)  # rec_id -> speaker id (filled in by 02 where Vaani lacks speakerID)
 
     rows, n_rec, n_no_speech = [], 0, 0
     pf = pq.ParquetFile(raw_shard_path)
@@ -148,7 +149,7 @@ def build_clips_for_shard(cfg: dict, raw_shard_path: str, keep_rec_ids: list[str
             cands = candidates(segs, len(wav), cfg, rng)
             if not cands:
                 n_no_speech += 1
-            spk_id = str(r["speakerID"])
+            spk_id = rec_speaker[r["rec_id"]]
             split = split_of[spk_id]
             for c in cands:
                 cid = clip_id(r["rec_id"], c["cut"])

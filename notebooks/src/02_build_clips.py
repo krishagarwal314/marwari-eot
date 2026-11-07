@@ -36,7 +36,27 @@ SPLIT_FILE = rt.path("splits", f"speakers_{cfg['splits']['version']}.parquet")
 
 idx = pd.read_parquet(os.path.join(RAW, "recordings_index.parquet"))
 m = idx[idx.group == "marwari"].copy()
-print(len(m), "Marwari recordings;", m.speakerID.isna().sum(), "without speakerID (dropped: cannot split by speaker)")
+
+# Some districts (Jaipur) have no speakerID. The Vaani audio path holds the speaker number
+# ("..._Churu_111812_..." for RACH_111812). Check that rule on rows that do have a speakerID,
+# and use it only if it agrees almost always.
+import re
+def spk_num_from_path(p):
+    hit = re.search(r"_(\d{5,})_", str(p or ""))
+    return hit.group(1) if hit else None
+has = m[m.speakerID.notna()]
+nums = has.src_audio_path.map(spk_num_from_path)
+match = (nums.notna() & [str(n) in str(s) for n, s in zip(nums, has.speakerID)]).mean()
+print(f"path rule matches the real speakerID on {match:.1%} of {len(has)} rows")
+miss = m.speakerID.isna()
+print(miss.sum(), "recordings without speakerID, by district:", m[miss].district.value_counts().to_dict())
+if match >= 0.98:
+    m.loc[miss, "speakerID"] = m.loc[miss, "src_audio_path"].map(
+        lambda p: f"PATH_{spk_num_from_path(p)}" if spk_num_from_path(p) else None)
+    print("filled from path:", int(miss.sum() - m.speakerID.isna().sum()))
+else:
+    print("path rule not reliable: recordings without speakerID are dropped")
+print(m.speakerID.isna().sum(), "still without speaker (dropped: cannot split by speaker)")
 m = m[m.speakerID.notna()]
 m["speakerID"] = m["speakerID"].astype(str)
 
@@ -93,7 +113,7 @@ for c in C.candidates(segs, len(wav), cfg, np.random.default_rng(0)):
 
 # %%
 WORKERS = max(1, rt.num_workers)
-by_shard = m.groupby("shard_file").rec_id.apply(list).to_dict()
+by_shard = {s: dict(zip(g.rec_id, g.speakerID)) for s, g in m.groupby("shard_file")}
 todo = [s for s in by_shard if not os.path.exists(os.path.join(DONE, s.removesuffix(".parquet") + ".json"))]
 print(f"{len(by_shard)} raw shards, {len(todo)} to do, {WORKERS} workers")
 t0 = time.time()
