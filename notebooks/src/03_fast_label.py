@@ -68,6 +68,11 @@ ans = {}
 for f in os.listdir(CACHE):
     ans.update(read_cache(os.path.join(CACHE, f)))
 df = clips.copy()
+# Splits are recomputed from the speaker hash with the current config fractions (fast track moved
+# test from 10% to 20% of speakers). Telephony augmentation is only ever applied to train clips.
+df["split"] = [C.split_for_new_speaker(str(s), cfg, SEED) for s in df.speakerID]
+df["telephony"] = df.telephony & (df.split == "train")
+assert df.groupby("speakerID").split.nunique().max() == 1
 for k in ["label", "confidence", "language"]:
     df[f"llm_{k}"] = df.clip_id.map(lambda i: ans.get(i, {}).get(k))
 dec = [decide(p, l, c, L["confident_threshold"]) for p, l, c in zip(df.position_label, df.llm_label, df.llm_confidence)]

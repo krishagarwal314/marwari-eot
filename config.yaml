@@ -117,7 +117,7 @@ clips:
 splits:
   version: v1                       # frozen once written; never reassigned
   dev_frac: 0.1
-  test_frac: 0.1                    # test speakers are held back for Phase 2
+  test_frac: 0.2                    # fast track: 20% of speakers in test (was 10%; test set was too small)
   stratify_by: [district, gender]
 
 labelling:
@@ -129,7 +129,7 @@ labelling:
     at a pause. Has the speaker finished their thought, or will they continue?
     Answer COMPLETE, INCOMPLETE or UNSURE, and give your confidence from 0 to 1.
     Also say which language is mainly spoken: MARWARI, HINDI, MIXED or OTHER.
-  confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
+  confident_threshold: 1.01        # >1 = keep only clips where Gemini agrees with the position rule (Flash Lite's confidence was uninformative: 98% of disagreements had conf >= 0.8)
   thinking_budget: null            # Gemini 3 models do not take thinking_budget
   workers: 4
   requests_per_minute: 14           # Flash Lite free tier allows 15/min (requests run 4 at a time)
