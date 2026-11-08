@@ -152,3 +152,95 @@ def decide_with_text(position_label: int, llm_label: str | None, llm_conf: float
     if llm_bin == int(text_label):
         return llm_bin, "llm_text_agree"
     return None, "llm_text_disagree"
+
+
+class QuotaExhausted(RuntimeError):
+    """The Gemini daily quota is used up; re-run later (answers so far are cached)."""
+
+
+_BATCH_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "clip": {"type": "INTEGER"},
+            "label": {"type": "STRING", "enum": list(LABELS)},
+            "confidence": {"type": "NUMBER"},
+            "language": {"type": "STRING", "enum": list(LANGS)},
+        },
+        "required": ["clip", "label", "confidence", "language"],
+    },
+}
+
+
+def _is_daily_quota(e: Exception) -> bool:
+    t = repr(e).lower()
+    return "perday" in t or "per day" in t or "requests_per_day" in t or "daily" in t
+
+
+class BatchGeminiLabeler(GeminiLabeler):
+    """Several clips per request (fewer requests -> free tier lasts much longer)."""
+
+    def label_batch(self, wavs: list[bytes]) -> list[dict]:
+        from google.genai import types
+
+        n = len(wavs)
+        contents = []
+        for i, w in enumerate(wavs, 1):
+            contents += [f"Clip {i}:", types.Part.from_bytes(data=w, mime_type="audio/wav")]
+        contents.append(
+            f"There are {n} separate clips above. Judge each one on its own. {self.cfg['prompt']} "
+            f"Return a JSON array with exactly {n} objects, one per clip, using clip numbers 1 to {n}."
+        )
+        kw = dict(temperature=0, response_mime_type="application/json", response_schema=_BATCH_SCHEMA)
+        if self.cfg.get("thinking_budget") is not None:
+            kw["thinking_config"] = types.ThinkingConfig(thinking_budget=self.cfg["thinking_budget"])
+        last = None
+        for attempt in range(self.cfg["max_retries"]):
+            self.limiter.wait()
+            try:
+                resp = self.client.models.generate_content(
+                    model=self.cfg["model"], contents=contents, config=types.GenerateContentConfig(**kw))
+                arr = json.loads(resp.text)
+                by_clip = {int(d["clip"]): d for d in arr}
+                if sorted(by_clip) != list(range(1, n + 1)):
+                    raise ValueError(f"got clips {sorted(by_clip)[:5]}... expected 1..{n}")
+                out = []
+                for i in range(1, n + 1):
+                    d = by_clip[i]
+                    lab, lang = str(d["label"]).upper(), str(d.get("language", "")).upper()
+                    out.append({"label": lab if lab in LABELS else "UNSURE", "confidence": float(d["confidence"]),
+                                "language": lang if lang in LANGS else None})
+                return out
+            except Exception as e:
+                if _is_daily_quota(e):
+                    raise QuotaExhausted(repr(e)[:300]) from None
+                last = e
+                code = getattr(e, "code", None)
+                if code is not None and 400 <= int(code) < 500 and int(code) != 429:
+                    break
+                time.sleep(min(90, 5 * 2 ** attempt) + random.random())
+        raise RuntimeError(f"Gemini batch failed: {last!r}")
+
+    def label_many_batched(self, items, cache_path: str, batch_size: int) -> dict:
+        """items: list of (clip_id, wav_bytes). Sequential batches; each answer cached at once."""
+        done = read_cache(cache_path)
+        todo = [(c, b) for c, b in items if c not in done]
+        n_ok = n_err = 0
+        with open(cache_path, "a") as f:
+            for i in range(0, len(todo), batch_size):
+                chunk = todo[i:i + batch_size]
+                try:
+                    res = self.label_batch([b for _, b in chunk])
+                except QuotaExhausted:
+                    raise
+                except Exception as e:
+                    n_err += len(chunk)
+                    print("   batch failed:", repr(e)[:200])
+                    continue
+                for (cid, _), r in zip(chunk, res):
+                    f.write(json.dumps({"clip_id": cid, **r, "model": self.cfg["model"], "ts": time.time()}) + "\n")
+                n_ok += len(chunk)
+                f.flush()
+                os.fsync(f.fileno())
+        return {"answered_now": n_ok, "failed": n_err, "cached_total": len(done) + n_ok}

@@ -131,7 +131,8 @@ labelling:
   confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
   thinking_budget: 0                # no hidden reasoning tokens (cheaper); set null for models without this option
   workers: 4
-  requests_per_minute: 60           # lower this on the free tier
+  requests_per_minute: 8            # free tier is ~10 requests/min
+  batch_size: 20                    # clips per request in 03_fast_label (8 s each)
   max_retries: 6
   label_splits: [train, dev, test]  # test is labelled only to help draw the Phase 2 set; never trained on
   max_clips: null                   # cap for a trial run, e.g. 500
