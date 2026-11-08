@@ -235,7 +235,18 @@ def onnx_predict(path: str, X: np.ndarray, threads: int = 0, batch: int = 64) ->
 
 
 def quantize_int8(fp32_path: str, out_path: str) -> str:
+    import onnx
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    quantize_dynamic(fp32_path, out_path, weight_type=QuantType.QInt8)
+    # The dynamo exporter writes intermediate shape annotations (value_info) that onnx shape
+    # inference later contradicts ("Inferred shape and existing shape differ"). They are optional,
+    # so drop them before quantising.
+    m = onnx.load(fp32_path)
+    del m.graph.value_info[:]
+    clean = fp32_path.replace(".onnx", ".novi.onnx")
+    onnx.save(m, clean)
+    try:
+        quantize_dynamic(clean, out_path, weight_type=QuantType.QInt8)
+    finally:
+        os.remove(clean)
     return out_path
