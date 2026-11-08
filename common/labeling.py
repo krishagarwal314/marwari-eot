@@ -179,7 +179,21 @@ def _is_daily_quota(e: Exception) -> bool:
 
 
 class BatchGeminiLabeler(GeminiLabeler):
-    """Several clips per request (fewer requests -> free tier lasts much longer)."""
+    """Several clips per request (fewer requests -> free tier lasts much longer). When a model's
+    daily quota runs out it moves on to the next model in ``labelling.fallback_models``."""
+
+    def __init__(self, cfg: dict, api_key: str):
+        super().__init__(cfg, api_key)
+        self.cfg = dict(self.cfg)  # local copy: the active model changes on fallback
+        self.models = [self.cfg["model"]] + list(self.cfg.get("fallback_models") or [])
+
+    def _next_model(self) -> bool:
+        i = self.models.index(self.cfg["model"])
+        if i + 1 >= len(self.models):
+            return False
+        self.cfg["model"] = self.models[i + 1]
+        print(f"   daily quota used up -> switching to {self.cfg['model']}")
+        return True
 
     def label_batch(self, wavs: list[bytes]) -> list[dict]:
         from google.genai import types
@@ -231,7 +245,12 @@ class BatchGeminiLabeler(GeminiLabeler):
             for i in range(0, len(todo), batch_size):
                 chunk = todo[i:i + batch_size]
                 try:
-                    res = self.label_batch([b for _, b in chunk])
+                    try:
+                        res = self.label_batch([b for _, b in chunk])
+                    except QuotaExhausted:
+                        if not self._next_model():
+                            raise
+                        res = self.label_batch([b for _, b in chunk])
                 except QuotaExhausted:
                     raise
                 except Exception as e:

@@ -29,7 +29,8 @@ assert os.environ.get("GEMINI_API_KEY"), "Add GEMINI_API_KEY in Colab Secrets, t
 lab = BatchGeminiLabeler(cfg, os.environ["GEMINI_API_KEY"])
 models = lab.available_models()
 print("flash models:", [m for m in models if "flash" in m])
-assert L["model"] in models, f"set labelling.model in config.yaml to one of the models above"
+missing = [m for m in [L["model"]] + (L.get("fallback_models") or []) if m not in models]
+assert not missing, f"{missing} not available; edit labelling.model / fallback_models in config.yaml"
 
 # %%
 order = {"dev": 0, "test": 1, "train": 2}
