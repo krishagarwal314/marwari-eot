@@ -147,7 +147,7 @@ text:                               # 02b: transcript cues
   align_tolerance_ms: 60
 
 fast_train:                         # 04_fast_train_eval (one config, one seed)
-  run_name: fast_m50_seed0
+  run_name: fast_m50_seed0_tailfix   # new name: the first run learned the zero-padding shortcut
   seed: 0
   batch_size: 64
   marwari_share: 0.5                # half of every batch Marwari, half Smart Turn replay

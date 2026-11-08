@@ -42,6 +42,39 @@ def telephony_safe(wav: np.ndarray, seed_float: float) -> np.ndarray:
     return y
 
 
+def normalize_tail(wav: np.ndarray, tail: int, seed_float: float) -> np.ndarray:
+    """Replace the last ``tail`` samples (the 200 ms after the speech end) with real background
+    noise taken from the clip's own quietest 200 ms stretch.
+
+    Applied to COMPLETE and INCOMPLETE clips alike. Vaani recordings stop right at the end of
+    speech, so COMPLETE clips used to end in zero-padding (digital silence) while INCOMPLETE ones
+    ended in a real pause: a shortcut that predicted the label 99.6% of the time. With the same
+    synthetic tail on every clip, the ending carries no label information.
+    """
+    rng = np.random.default_rng(int(seed_float * 2 ** 32))
+    body = np.asarray(wav[:-tail] if len(wav) > tail else wav[:0], np.float32)
+    noise = None
+    if len(body) > tail:
+        c = np.concatenate([[0.0], np.cumsum(body.astype(np.float64) ** 2)])
+        starts = np.arange(0, len(body) - tail + 1, 160)
+        rms = np.sqrt((c[starts + tail] - c[starts]) / tail)
+        ok = rms > 1e-4  # never copy digital silence
+        if ok.any():
+            i = starts[ok][np.argmin(rms[ok])]
+            noise = body[i:i + tail].copy()
+            if rng.random() < 0.5:
+                noise = noise[::-1].copy()
+    if noise is None:  # no usable quiet stretch: Gaussian noise at a typical room level
+        noise = rng.normal(0, 3e-3, tail).astype(np.float32)
+    return np.concatenate([body, noise]).astype(np.float32)
+
+
+def tail_stats(wav: np.ndarray, tail: int) -> tuple[float, float]:
+    """(rms of the last ``tail`` samples, rms of the ``tail`` samples before it) for the probe."""
+    r = lambda x: float(np.sqrt(np.mean(np.square(x, dtype=np.float64)))) if len(x) else 0.0
+    return r(wav[-tail:]), r(wav[-2 * tail:-tail])
+
+
 # --- replay data (Smart Turn v3.2) -----------------------------------------------------------
 
 def sample_smart_turn(cfg: dict, which: str, per_lang: int, local_dir: str, max_files: int,

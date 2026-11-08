@@ -35,36 +35,49 @@ print(ds.groupby("split").final_label.agg(n="size", complete_frac="mean").round(
 # ## 1. Features
 
 # %%
-mar_path = os.path.join(CACHE, "marwari.npz")
+# Every clip's last 200 ms (after the speech end) is replaced by the clip's own background noise:
+# Vaani recordings stop right at the end of speech, so COMPLETE clips otherwise end in digital
+# silence, a shortcut (see FT.normalize_tail).
+TAIL = int(cfg["audio"]["trailing_silence_ms"] * 16)
+mar_path = os.path.join(CACHE, "marwari_tailfix.npz")
 if os.path.exists(mar_path):
     z = np.load(mar_path, allow_pickle=True)
-    MX, mids = z["X"], list(z["ids"])
+    MX, mids, mtail = z["X"], list(z["ids"]), z["tail"]
 else:
     t0 = time.time()
-    feats, mids = [], []
+    feats, mids, mtail = [], [], []
     tel = dict(zip(ds.clip_id, ds.telephony))
     for shard, g in ds.groupby("clip_shard"):
         t = pq.read_table(os.path.join(CLIPS, shard), columns=["clip_id", "flac"]).to_pandas()
         t = t[t.clip_id.isin(set(g.clip_id))].drop_duplicates("clip_id")
         wavs = []
         for cid, fl in zip(t.clip_id, t.flac):
-            w = A.decode_bytes(fl)
+            u = float(int(cid[:8], 16)) / 16 ** 8
+            w = FT.normalize_tail(A.decode_bytes(fl), TAIL, u)
+            mtail.append(FT.tail_stats(w, TAIL))
             if tel.get(cid):
-                w = FT.telephony_safe(w, float(int(cid[:8], 16)) / 16 ** 8)
+                w = FT.telephony_safe(w, u)
             wavs.append(w)
         feats.append(FT.features_parallel(wavs, rt.num_workers))
         mids += list(t.clip_id)
-    MX = np.concatenate(feats)
-    np.savez(mar_path, X=MX, ids=np.array(mids))
+    MX, mtail = np.concatenate(feats), np.array(mtail)
+    np.savez(mar_path, X=MX, ids=np.array(mids), tail=mtail)
     print(f"Marwari features {MX.shape} in {(time.time()-t0)/60:.1f} min")
 pos = {c: i for i, c in enumerate(mids)}
 def subset(split):
-    d = ds[(ds.split == split) & ds.clip_id.isin(pos)]
-    return MX[[pos[c] for c in d.clip_id]], d.final_label.to_numpy(), d
+    d = ds[(ds.split == split) & ds.clip_id.isin(pos)].copy()
+    ix = [pos[c] for c in d.clip_id]
+    d["tail_rms"], d["pre_tail_rms"] = mtail[ix, 0], mtail[ix, 1]
+    return MX[ix], d.final_label.to_numpy(), d
 trX, trY, trD = subset("train")
 dvX, dvY, dvD = subset("dev")
 teX, teY, teD = subset("test")
 print("train", trX.shape, "dev", dvX.shape, "test", teX.shape)
+
+# Shortcut probe: can the clip ENDING alone predict the label? AUC near 0.5 = no shortcut.
+# (Before the fix, 'ends in zero-padding' predicted COMPLETE with 99.6% balanced accuracy.)
+probe = {k: round(max(M.roc_auc(teY, teD[k]), 1 - M.roc_auc(teY, teD[k])), 3) for k in ["tail_rms", "pre_tail_rms"]}
+print("shortcut probe AUC (0.5 = no information):", probe)
 
 # %%
 rep_path = os.path.join(CACHE, "replay.npz")
@@ -164,7 +177,9 @@ results = {"stock": base, "fine_tuned": ft, "training": info, "onnx": onnx_res,
            "n": {"marwari_train": int(len(trY)), "marwari_dev": int(len(dvY)), "marwari_test": int(len(teY)),
                  "marwari_test_speakers": int(teD.speakerID.nunique()), "replay_train": int((~is_dev).sum()),
                  "replay_test": int(len(qY))},
-           "labels": "Gemini Flash Lite (silver), not human-verified"}
+           "labels": "Gemini Flash Lite agreeing with the position rule (silver), not human-verified",
+           "shortcut_probe_auc": probe,
+           "tail": "last 200 ms of every Marwari clip replaced by the clip's own background noise"}
 with open(rt.path("reports", "fast_results.json"), "w") as f:
     json.dump(results, f, indent=1, default=str)
 with open(rt.path("reports", "fast_results.md"), "w") as f:
