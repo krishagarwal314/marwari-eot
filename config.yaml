@@ -146,6 +146,22 @@ text:                               # 02b: transcript cues
   align_lang: hin                   # Devanagari CTC adapter; covers Marwari transcripts (ळ -> ल)
   align_tolerance_ms: 60
 
+fast_train:                         # 04_fast_train_eval (one config, one seed)
+  run_name: fast_m50_seed0
+  seed: 0
+  batch_size: 64
+  marwari_share: 0.5                # half of every batch Marwari, half Smart Turn replay
+  epochs: 4                         # passes over the Marwari training clips
+  lr_head: 1.0e-4
+  lr_encoder: 2.0e-5
+  weight_decay: 0.01
+  warmup_frac: 0.05
+  eval_every: 100
+  patience: 4                       # evals without dev improvement before stopping
+  replay_train_per_lang: 450        # ~10k replay clips (23 languages); 10% of them become replay dev
+  replay_test_per_lang: 150         # ~3.4k clips from smart-turn-data-v3.2-test for the regression check
+  replay_max_files: 12
+
 logging:
   wandb_project: marwari-eot
   wandb_entity: null

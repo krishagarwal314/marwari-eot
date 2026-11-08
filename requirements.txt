@@ -12,3 +12,4 @@ silero-vad
 wandb
 google-genai
 ipywidgets
+onnxscript
