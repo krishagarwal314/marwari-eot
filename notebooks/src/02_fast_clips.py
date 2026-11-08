@@ -45,7 +45,10 @@ with ProcessPoolExecutor(WORKERS) as ex:
 
 # %%
 clips = F.clip_index(OUT)
-assert clips.clip_id.is_unique
+# Vaani has a few byte-identical recordings (same audio uploaded twice) -> identical clip ids.
+n0 = len(clips)
+clips = clips.drop_duplicates("clip_id", keep="first").reset_index(drop=True)
+print(f"{n0 - len(clips)} duplicate clips dropped (identical recordings in Vaani)")
 assert clips.groupby("speakerID").split.nunique().max() == 1, "a speaker is in two splits"
 clips.to_parquet(os.path.join(rt.root, cfg["dirs"]["clips"], "fast_v1_index.parquet"), index=False)
 stats = {
