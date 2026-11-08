@@ -235,6 +235,8 @@ class BatchGeminiLabeler(GeminiLabeler):
                 except QuotaExhausted:
                     raise
                 except Exception as e:
+                    if "404" in repr(e) or "NOT_FOUND" in repr(e):
+                        raise RuntimeError(f"Model not available: {e!r}"[:400]) from None
                     n_err += len(chunk)
                     print("   batch failed:", repr(e)[:200])
                     continue

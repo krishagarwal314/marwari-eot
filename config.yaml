@@ -122,14 +122,14 @@ splits:
 
 labelling:
   version: v1
-  model: gemini-2.5-flash           # 03 lists available models and stops if this one is missing
+  model: gemini-3.5-flash          # gemini-2.5-flash is retired for new users (404)
   prompt: >-
     You will hear a short clip of a person speaking Marwari (a Rajasthani language). The clip ends
     at a pause. Has the speaker finished their thought, or will they continue?
     Answer COMPLETE, INCOMPLETE or UNSURE, and give your confidence from 0 to 1.
     Also say which language is mainly spoken: MARWARI, HINDI, MIXED or OTHER.
   confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
-  thinking_budget: 0                # no hidden reasoning tokens (cheaper); set null for models without this option
+  thinking_budget: null            # Gemini 3 models do not take thinking_budget
   workers: 4
   requests_per_minute: 8            # free tier is ~10 requests/min
   batch_size: 20                    # clips per request in 03_fast_label (8 s each)
