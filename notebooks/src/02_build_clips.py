@@ -113,7 +113,12 @@ for c in C.candidates(segs, len(wav), cfg, np.random.default_rng(0)):
 
 # %%
 WORKERS = max(1, rt.num_workers)
-by_shard = {s: dict(zip(g.rec_id, g.speakerID)) for s, g in m.groupby("shard_file")}
+use = m
+if cfg["clips"]["max_recordings"]:
+    use = m.assign(_h=[C.unit_hash(SEED, "rec", r) for r in m.rec_id]).nsmallest(cfg["clips"]["max_recordings"], "_h")
+    print(f"using {len(use)} of {len(m)} recordings ({use.duration_s.sum()/3600:.1f} h); by split:",
+          use.speakerID.map(split_of).value_counts().to_dict())
+by_shard = {s: dict(zip(g.rec_id, g.speakerID)) for s, g in use.groupby("shard_file")}
 todo = [s for s in by_shard if not os.path.exists(os.path.join(DONE, s.removesuffix(".parquet") + ".json"))]
 print(f"{len(by_shard)} raw shards, {len(todo)} to do, {WORKERS} workers")
 t0 = time.time()
