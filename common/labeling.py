@@ -237,31 +237,41 @@ class BatchGeminiLabeler(GeminiLabeler):
         raise RuntimeError(f"Gemini batch failed: {last!r}")
 
     def label_many_batched(self, items, cache_path: str, batch_size: int) -> dict:
-        """items: list of (clip_id, wav_bytes). Sequential batches; each answer cached at once."""
+        """items: list of (clip_id, wav_bytes). Batches are sent concurrently (labelling.workers
+        threads; the shared rate limiter keeps the request rate legal). Each answer is cached as it
+        arrives. When a model's daily quota runs out, the batch is retried on the next model."""
         done = read_cache(cache_path)
         todo = [(c, b) for c, b in items if c not in done]
+        chunks = [todo[i:i + batch_size] for i in range(0, len(todo), batch_size)]
         n_ok = n_err = 0
-        with open(cache_path, "a") as f:
-            for i in range(0, len(todo), batch_size):
-                chunk = todo[i:i + batch_size]
+        lock = threading.Lock()
+
+        with ThreadPoolExecutor(self.cfg["workers"]) as ex, open(cache_path, "a") as f:
+            futs = {ex.submit(self.label_batch, [b for _, b in ch]): ch for ch in chunks}
+            for fut in as_completed(futs):
+                ch = futs[fut]
                 try:
-                    try:
-                        res = self.label_batch([b for _, b in chunk])
-                    except QuotaExhausted:
-                        if not self._next_model():
-                            raise
-                        res = self.label_batch([b for _, b in chunk])
+                    res = fut.result()
                 except QuotaExhausted:
-                    raise
+                    with lock:
+                        model_now = self.cfg["model"]
+                    try:  # switch (once) and retry this batch on the next model
+                        if self.cfg["model"] == model_now and not self._next_model():
+                            raise
+                        res = self.label_batch([b for _, b in ch])
+                    except QuotaExhausted:
+                        ex.shutdown(wait=False, cancel_futures=True)
+                        raise
                 except Exception as e:
                     if "404" in repr(e) or "NOT_FOUND" in repr(e):
+                        ex.shutdown(wait=False, cancel_futures=True)
                         raise RuntimeError(f"Model not available: {e!r}"[:400]) from None
-                    n_err += len(chunk)
+                    n_err += len(ch)
                     print("   batch failed:", repr(e)[:200])
                     continue
-                for (cid, _), r in zip(chunk, res):
+                for (cid, _), r in zip(ch, res):
                     f.write(json.dumps({"clip_id": cid, **r, "model": self.cfg["model"], "ts": time.time()}) + "\n")
-                n_ok += len(chunk)
+                n_ok += len(ch)
                 f.flush()
                 os.fsync(f.fileno())
         return {"answered_now": n_ok, "failed": n_err, "cached_total": len(done) + n_ok}

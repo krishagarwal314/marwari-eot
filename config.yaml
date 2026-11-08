@@ -132,7 +132,7 @@ labelling:
   confident_threshold: 0.8          # LLM label overrides the position rule only above this confidence
   thinking_budget: null            # Gemini 3 models do not take thinking_budget
   workers: 4
-  requests_per_minute: 12           # Flash Lite free tier allows 15/min
+  requests_per_minute: 14           # Flash Lite free tier allows 15/min (requests run 4 at a time)
   batch_size: 20                    # clips per request in 03_fast_label (8 s each)
   max_retries: 6
   label_splits: [train, dev, test]  # test is labelled only to help draw the Phase 2 set; never trained on
