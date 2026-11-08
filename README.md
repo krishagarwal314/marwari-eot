@@ -4,10 +4,6 @@ End-of-turn detection for Marwari. The goal: take Pipecat's Smart Turn v3.2 (a W
 decides whether a speaker has finished their turn), measure it on Marwari, and fine-tune it without hurting the 23
 languages it already supports.
 
-This README covers two rounds of experiments. Read both before quoting a number.
-
-## Round 1
-
 ### Data
 
 Marwari speech comes from [Vaani](https://huggingface.co/datasets/ARTPARK-IISc/Vaani) (ARTPARK / IISc): 149 hours,
@@ -22,6 +18,8 @@ A random 1 in 8 recordings was used, about 10k in total. Each recording was run 
 Each clip keeps the last 8 seconds of audio, which is the window Smart Turn uses, plus 200 ms after the speech. Those
 200 ms are filled with background noise taken from the same clip. Half of the training clips also go through an
 8 kHz phone-line simulation.
+
+**Dataset:** [marwari-eot-v1](https://huggingface.co/datasets/krishasdf/marwari-eot-v1)
 
 ### Labels
 
@@ -45,6 +43,8 @@ sampled evenly. The replay half is there to stop the model forgetting the other 
 
 Optimiser settings: AdamW, learning rate 2e-5 for the encoder and 1e-4 for the head, warm-up then cosine decay.
 Early stopping is on dev balanced accuracy. One run on a Colab T4 takes about 2 minutes.
+
+**Fine-tuned model:** [smart-turn-v3.2-marwari](https://huggingface.co/krishasdf/smart-turn-v3.2-marwari)
 
 ### Results
 
@@ -72,5 +72,3 @@ Exported model files:
 | int8 ONNX (dynamic) | 73.7% | 87 ms | 9 MB |
 
 Dynamic int8 quantisation costs 17 points and is not faster, so the fp32 file is the one to use.
-
- from it.
